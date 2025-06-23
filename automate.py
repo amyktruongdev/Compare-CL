@@ -3,6 +3,7 @@ import pandas as pd
 from io import BytesIO
 from openpyxl import Workbook
 from openpyxl.styles import PatternFill, Font
+from openpyxl.formatting.rule import FormulaRule
 from openpyxl.utils import get_column_letter
 from openpyxl.cell.cell import Cell
 import matplotlib.pyplot as plt
@@ -97,6 +98,34 @@ if all(uploaded_files):
     results_only_df = df_combined[result_columns]
     merged_output = pd.merge(base_df, results_only_df, on=["spec_number", "spec_id_expansion", "spec_item_category", "spec_item_old_name"], how="left")
 
+    columns_to_move = ["File Presence", "Minimum_Limits1", "Typical_Limits1", "Maximum_Limits1"]
+    for name in custom_names:
+        columns_to_move.extend([f"Minimum_{name}", f"Typical_{name}", f"Maximum_{name}"])
+    columns_to_move.extend(["Pass or Fail", "Why Failed"])
+
+    # Look at the second row to find 'vswr' column
+    second_row = merged_output.iloc[0] if len(merged_output) > 0 else None
+    vswr_column_name = None
+    if second_row is not None:
+        for col in merged_output.columns:
+            if str(second_row[col]).strip().lower() == "vswr":
+                vswr_column_name = col
+                break
+
+    if vswr_column_name:
+        col_list = merged_output.columns.tolist()
+        idx = col_list.index(vswr_column_name) + 1  # insert after the vswr column
+
+        # Remove the columns to move if they exist
+        for col in columns_to_move:
+            if col in col_list:
+                col_list.remove(col)
+
+        # Insert them after vswr
+        reordered_cols = col_list[:idx] + columns_to_move + col_list[idx:]
+        merged_output = merged_output[reordered_cols]
+
+
     st.write("You can review your data below. Pass/Fail will be calculated in Excel.")
     st.dataframe(merged_output)
 
@@ -154,8 +183,17 @@ if all(uploaded_files):
         plt.legend(title="File")
         plt.xticks(rotation=45)
         st.pyplot(plt)
-
-    # === WRITE TO EXCEL ===
+        # Add download button for the current graph
+        img_buffer = BytesIO()
+        plt.savefig(img_buffer, format='png', bbox_inches='tight')
+        img_buffer.seek(0)
+        st.download_button(
+            label="Download This Graph as PNG",
+            data=img_buffer,
+            file_name="cl_comparison_graph.png",
+            mime="image/png"
+        )
+    # EXCEL EXPORT with corrected dynamic CL name logic
     wb = Workbook()
     ws = wb.active
     ws.title = "Comparison"
@@ -173,31 +211,30 @@ if all(uploaded_files):
 
         failures = []
         for i in range(1, num_files + 1):
+            name = custom_names[i - 1]
             min_limit_val = row.get("Minimum_Limits1")
             max_limit_val = row.get("Maximum_Limits1")
-            name = custom_names[i - 1]
             min_cl_val = row.get(f"Minimum_{name}")
             typ_cl_val = row.get(f"Typical_{name}")
             max_cl_val = row.get(f"Maximum_{name}")
-
 
             failed_min = False
             failed_max = False
 
             if min_limit_val is not None:
                 if min_cl_val is not None and min_cl_val < min_limit_val:
-                    failures.append(f"Minimum_{custom_names[i-1]} < Minimum_Limits1")
+                    failures.append(f"Minimum_{name} < Minimum_Limits1")
                 if typ_cl_val is not None and typ_cl_val < min_limit_val:
                     failed_min = True
 
             if max_limit_val is not None:
                 if max_cl_val is not None and max_cl_val > max_limit_val:
-                    failures.append(f"Maximum_{custom_names[i-1]} > Maximum_Limits1")
+                    failures.append(f"Maximum_{name} > Maximum_Limits1")
                 if typ_cl_val is not None and typ_cl_val > max_limit_val:
                     failed_max = True
 
             if typ_cl_val is not None and failed_min and failed_max:
-                failures.append(f"Typical_{custom_names[i-1]} outside both limit bounds")
+                failures.append(f"Typical_{name} outside both limit bounds")
 
         pass_col = merged_output.columns.get_loc("Pass or Fail") + 1
         why_col = merged_output.columns.get_loc("Why Failed") + 1
@@ -213,21 +250,20 @@ if all(uploaded_files):
             pass_cell.fill = red_fill
             pass_cell.font = red_font
 
-        # Color formatting for that row
         for i in range(1, num_files + 1):
-            min_col = merged_output.columns.get_loc(f"Minimum_{custom_names[i-1]}") + 1
-            typ_col = merged_output.columns.get_loc(f"Typical_{custom_names[i-1]}") + 1
-            max_col = merged_output.columns.get_loc(f"Maximum_{custom_names[i-1]}") + 1
+            name = custom_names[i - 1]
+            min_col = merged_output.columns.get_loc(f"Minimum_{name}") + 1
+            typ_col = merged_output.columns.get_loc(f"Typical_{name}") + 1
+            max_col = merged_output.columns.get_loc(f"Maximum_{name}") + 1
 
             for col_idx, cl_val, limit_val, condition in [
-                (min_col, row.get(f"Minimum__{custom_names[i-1]}"), row.get("Minimum_Limits1"), lambda cl, lim: cl >= lim),
-                (max_col, row.get(f"Maximum_{custom_names[i-1]}"), row.get("Maximum_Limits1"), lambda cl, lim: cl <= lim)
+                (min_col, row.get(f"Minimum_{name}"), row.get("Minimum_Limits1"), lambda cl, lim: cl >= lim),
+                (max_col, row.get(f"Maximum_{name}"), row.get("Maximum_Limits1"), lambda cl, lim: cl <= lim)
             ]:
                 cell = ws.cell(row=current_row, column=col_idx)
                 if pd.isna(cl_val):
-                    continue  # Skip if CL value itself is missing
+                    continue
                 if pd.isna(limit_val):
-                    # No limit to compare against, assume pass
                     cell.fill = green_fill
                     cell.font = green_font
                 elif condition(cl_val, limit_val):
@@ -237,9 +273,7 @@ if all(uploaded_files):
                     cell.fill = red_fill
                     cell.font = red_font
 
-
-            # Typical CL (check both bounds)
-            typ_val = row.get(f"Typical_{custom_names[i-1]}")
+            typ_val = row.get(f"Typical_{name}")
             typ_cell = ws.cell(row=current_row, column=typ_col)
             fail_min = row.get("Minimum_Limits1") is not None and typ_val is not None and typ_val < row.get("Minimum_Limits1")
             fail_max = row.get("Maximum_Limits1") is not None and typ_val is not None and typ_val > row.get("Maximum_Limits1")
@@ -251,7 +285,26 @@ if all(uploaded_files):
                     typ_cell.fill = green_fill
                     typ_cell.font = green_font
 
-    # Auto-width
+
+    # Find column letter for "Pass or Fail"
+    pass_col_letter = get_column_letter(pass_col)
+
+    # Create formula rules for Pass (Green) and Fail (Red)
+    pass_rule = FormulaRule(
+        formula=[f'${pass_col_letter}2="Pass"'],
+        fill=green_fill,
+        font=green_font
+    )
+    fail_rule = FormulaRule(
+        formula=[f'${pass_col_letter}2="Fail"'],
+        fill=red_fill,
+        font=red_font
+    )
+
+    # Apply rules to the entire Pass or Fail column (starting from row 2 to end)
+    ws.conditional_formatting.add(f'{pass_col_letter}2:{pass_col_letter}{ws.max_row}', pass_rule)
+    ws.conditional_formatting.add(f'{pass_col_letter}2:{pass_col_letter}{ws.max_row}', fail_rule)
+
     for col in ws.columns:
         max_length = 0
         column_letter = get_column_letter(col[0].column)
