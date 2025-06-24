@@ -29,7 +29,7 @@ for i in range(num_files):
 if all(uploaded_files):
     dataframes = [pd.read_csv(file) for file in uploaded_files]
     base_df = dataframes[0].copy()
-
+    base_df["spec_id_expansion"] = base_df["spec_id_expansion"].astype(str).str.strip().replace("nan", "")
     required_cols = ["spec_number", "cm_summary", "limits", "spec_item_category", "spec_item_old_name"]
     for df in dataframes:
         for col in required_cols:
@@ -86,16 +86,46 @@ if all(uploaded_files):
             return f"Found in files: {', '.join(found_in_files)}"
 
     df_combined["File Presence"] = df_combined.apply(check_file_presence, axis=1)
+    df_combined["spec_id_expansion"] = df_combined["spec_id_expansion"].astype(str).str.strip().replace("nan", "")
     df_combined["spec_id_expansion_sort"] = df_combined["spec_id_expansion"].fillna("").apply(lambda x: (0, "") if x == "" else (1, x))
     df_combined = df_combined.sort_values(by=["spec_number", "spec_id_expansion_sort"]).drop(columns=["spec_id_expansion_sort"])
+    def clean_spec_id(val):
+        try:
+            f = float(val)
+            if f.is_integer():
+                return str(int(f))  # turn 1.0 → "1"
+            else:
+                return str(f)       # leave as "1.5"
+        except:
+            return "" if pd.isna(val) or str(val).strip().lower() == "nan" else str(val).strip()
+
+    df_combined["spec_id_expansion"] = df_combined["spec_id_expansion"].apply(clean_spec_id)
+    base_df["spec_id_expansion"] = base_df["spec_id_expansion"].apply(clean_spec_id)
 
     result_columns = ["spec_number", "spec_id_expansion", "File Presence", "spec_item_category", "spec_item_old_name"] + limits_columns + cl_columns
     df_combined["Pass or Fail"] = None
     df_combined["Why Failed"] = None
     result_columns += ["Pass or Fail", "Why Failed"]
-
+    st.header("Select Spec ID Expansion to Filter CLs", divider=True)
+    expansion_filter = st.radio(
+        "Choose which spec_id_expansion to include for CL comparison:",
+        options=["All", "Blank", "1", "2"],
+        index=0,
+        horizontal=True
+    )
     results_only_df = df_combined[result_columns]
-    merged_output = pd.merge(base_df, results_only_df, on=["spec_number", "spec_id_expansion", "spec_item_category", "spec_item_old_name"], how="left")
+    merged_output = pd.merge(
+        base_df,
+        results_only_df,
+        on=["spec_number", "spec_id_expansion", "spec_item_category", "spec_item_old_name"],
+        how="left"
+    )
+    if expansion_filter == "Blank":
+        merged_output = merged_output[merged_output["spec_id_expansion"] == ""]
+        df_combined = df_combined[df_combined["spec_id_expansion"] == ""]
+    elif expansion_filter in ["1", "2"]:
+        merged_output = merged_output[merged_output["spec_id_expansion"] == expansion_filter]
+        df_combined = df_combined[df_combined["spec_id_expansion"] == expansion_filter]
 
     columns_to_move = ["File Presence", "Minimum_Limits1", "Typical_Limits1", "Maximum_Limits1"]
     for name in custom_names:
