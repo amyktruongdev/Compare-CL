@@ -183,42 +183,83 @@ if all(uploaded_files):
     show_max_limit = st.checkbox("Show Maximum Limit", value=True)
 
     if not filtered_data.empty:
-        cl_columns = [col for name in custom_names for col in filtered_data.columns if any(prefix in col for prefix in [f"Minimum_{name}", f"Typical_{name}", f"Maximum_{name}"])]
+        # Keep only Minimum and Maximum CL values from all uploaded files
+        cl_columns = [col for name in custom_names for col in filtered_data.columns
+                    if any(prefix in col for prefix in [f"Minimum_{name}", f"Maximum_{name}"])]
+        
         cl_data = filtered_data[["spec_number", "spec_item_category", "spec_item_old_name"] + cl_columns]
-        cl_data_melted = cl_data.melt(id_vars=["spec_number", "spec_item_category", "spec_item_old_name"], var_name="CL Type", value_name="Value")
+        cl_data_melted = cl_data.melt(
+            id_vars=["spec_number", "spec_item_category", "spec_item_old_name"],
+            var_name="CL Type", value_name="Value"
+        )
+
+        # Extract file name and value type from column names like "Minimum_CL1"
         cl_data_melted["File"] = cl_data_melted["CL Type"].apply(
             lambda x: next((name for name in custom_names if name in x), "Unknown")
         )
-        plt.figure(figsize=(20, 10))
-        sns.lineplot(
-            data=cl_data_melted,
-            x="spec_number",
-            y="Value",
-            hue="File",
-            style="File",
-            markers=True,
-            errorbar=None
+        cl_data_melted["Value Type"] = cl_data_melted["CL Type"].apply(
+            lambda x: "Minimum" if "Minimum_" in x else "Maximum"
         )
-        if show_min_limit:
-            plt.plot(filtered_data["spec_number"], filtered_data["Minimum_Limits1"], linestyle='--', color='purple', label='Minimum Limit')
-        if show_max_limit:
-            plt.plot(filtered_data["spec_number"], filtered_data["Maximum_Limits1"], linestyle='--', color='brown', label='Maximum Limit')
-        plt.title(f"CL Comparison for {'Spec Item Old Name ' + selected_spec_item_name if group_by_old_name else 'Spec Item Category ' + selected_spec_item_category}")
-        plt.xlabel("Spec Number")
-        plt.ylabel("Value")
-        plt.legend(title="File")
-        plt.xticks(rotation=45)
-        st.pyplot(plt)
 
-        img_buffer = BytesIO()
-        plt.savefig(img_buffer, format='png', bbox_inches='tight')
-        img_buffer.seek(0)
-        st.download_button(
-            label="Download This Graph as PNG",
-            data=img_buffer,
-            file_name="cl_comparison_graph.png",
-            mime="image/png"
-        )
+                # Check if there's any data to plot
+        if cl_data_melted["Value"].dropna().empty and not (show_min_limit or show_max_limit):
+            st.warning("No data available to plot. Please check your filters or enable at least one Limit to show.")
+        else:
+            # Plotting
+            plt.clf()
+            plt.figure(figsize=(20, 10))
+            sns.lineplot(
+                data=cl_data_melted,
+                x="spec_number",
+                y="Value",
+                hue="File",
+                style="Value Type",
+                markers=True,
+                dashes=True,
+                linewidth=2,
+                errorbar=None
+            )
+
+            # Add Limit lines
+            if show_min_limit and "Minimum_Limits1" in filtered_data.columns:
+                plt.plot(
+                    filtered_data["spec_number"],
+                    filtered_data["Minimum_Limits1"],
+                    linestyle='--',
+                    color='purple',
+                    label='Minimum Limit'
+                )
+            if show_max_limit and "Maximum_Limits1" in filtered_data.columns:
+                plt.plot(
+                    filtered_data["spec_number"],
+                    filtered_data["Maximum_Limits1"],
+                    linestyle='--',
+                    color='brown',
+                    label='Maximum Limit'
+                )
+
+            # Labels and formatting
+            plt.title(
+                f"CL Comparison for {'Spec Item Old Name ' + selected_spec_item_name if group_by_old_name else 'Spec Item Category ' + selected_spec_item_category}"
+            )
+            plt.xlabel("Spec Number")
+            plt.ylabel("CL Value")
+            plt.xticks(rotation=45)
+            plt.legend(title="File / Value Type")
+            plt.tight_layout()
+            st.pyplot(plt)
+
+            # Save graph to download
+            img_buffer = BytesIO()
+            plt.savefig(img_buffer, format='png', bbox_inches='tight')
+            img_buffer.seek(0)
+            st.download_button(
+                label="Download This Graph as PNG",
+                data=img_buffer,
+                file_name="cl_comparison_graph.png",
+                mime="image/png"
+            )
+
     wb = Workbook()
     ws = wb.active
     ws.title = "Comparison"
@@ -325,7 +366,7 @@ if all(uploaded_files):
                     else:
                         typ_cell.fill = green_fill
                         typ_cell.font = green_font
-                        
+
     for col in ws.columns:
         max_length = 0
         column_letter = get_column_letter(col[0].column)
