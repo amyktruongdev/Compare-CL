@@ -7,6 +7,8 @@ from openpyxl.utils import get_column_letter
 from openpyxl.cell.cell import Cell
 import matplotlib.pyplot as plt
 import seaborn as sns
+import plotly.express as px
+import plotly.graph_objects as go
 
 st.set_page_config(page_title="CL Comparison Tool", layout="centered")
 st.title("📊 CL Comparison Tool")
@@ -205,49 +207,46 @@ if all(uploaded_files):
         if cl_data_melted["Value"].dropna().empty and not (show_min_limit or show_max_limit):
             st.warning("No data available to plot. Please check your filters or enable at least one Limit to show.")
         else:
-            # Plotting
-            plt.clf()
-            plt.figure(figsize=(20, 10))
-            sns.lineplot(
-                data=cl_data_melted,
+            # Base interactive line plot
+            fig = px.line(
+                cl_data_melted,
                 x="spec_number",
                 y="Value",
-                hue="File",
-                style="Value Type",
+                color="File",
+                line_dash="Value Type",
                 markers=True,
-                dashes=True,
-                linewidth=2,
-                errorbar=None
+                hover_data=["spec_number", "Value", "File", "Value Type"],
+                title=f"CL Comparison for {'Spec Item Old Name ' + selected_spec_item_name if group_by_old_name else 'Spec Item Category ' + selected_spec_item_category}"
             )
 
-            # Add Limit lines
+            # Add limit lines if selected
             if show_min_limit and "Minimum_Limits1" in filtered_data.columns:
-                plt.plot(
-                    filtered_data["spec_number"],
-                    filtered_data["Minimum_Limits1"],
-                    linestyle='--',
-                    color='purple',
-                    label='Minimum Limit'
-                )
-            if show_max_limit and "Maximum_Limits1" in filtered_data.columns:
-                plt.plot(
-                    filtered_data["spec_number"],
-                    filtered_data["Maximum_Limits1"],
-                    linestyle='--',
-                    color='brown',
-                    label='Maximum Limit'
-                )
+                fig.add_trace(go.Scatter(
+                    x=filtered_data["spec_number"],
+                    y=filtered_data["Minimum_Limits1"],
+                    mode='lines+markers',
+                    name='Minimum Limit',
+                    line=dict(color='purple', dash='dash')
+                ))
 
-            # Labels and formatting
-            plt.title(
-                f"CL Comparison for {'Spec Item Old Name ' + selected_spec_item_name if group_by_old_name else 'Spec Item Category ' + selected_spec_item_category}"
+            if show_max_limit and "Maximum_Limits1" in filtered_data.columns:
+                fig.add_trace(go.Scatter(
+                    x=filtered_data["spec_number"],
+                    y=filtered_data["Maximum_Limits1"],
+                    mode='lines+markers',
+                    name='Maximum Limit',
+                    line=dict(color='brown', dash='dash')
+                ))
+
+            fig.update_layout(
+                xaxis_title="Spec Number",
+                yaxis_title="CL Value",
+                legend_title="File / Value Type",
+                xaxis_tickangle=45,
+                height=600
             )
-            plt.xlabel("Spec Number")
-            plt.ylabel("CL Value")
-            plt.xticks(rotation=45)
-            plt.legend(title="File / Value Type")
-            plt.tight_layout()
-            st.pyplot(plt)
+
+            st.plotly_chart(fig, use_container_width=True)
 
             # Save graph to download
             img_buffer = BytesIO()
