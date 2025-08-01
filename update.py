@@ -73,6 +73,7 @@ if all(uploaded_files):
 
     limits_columns = ["Minimum_Limits1", "Typical_Limits1", "Maximum_Limits1"]
     cl_columns = [col for name in custom_names for col in df_combined.columns if any(prefix in col for prefix in [f"Minimum_{name}", f"Maximum_{name}"])]
+    st.write("CL Columns Used in Plot", cl_columns)
     df_combined = df_combined[["spec_number", "spec_id_expansion", "spec_item_category", "spec_item_old_name"] + limits_columns + cl_columns]
 
     file_keys_list = [set(zip(df["spec_number"], df["spec_id_expansion"], df["spec_item_category"], df["spec_item_old_name"])) for df in combined_columns]
@@ -384,3 +385,4 @@ if all(uploaded_files):
         file_name=final_output.name,
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
+
