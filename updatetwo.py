@@ -5,8 +5,6 @@ from openpyxl import Workbook
 from openpyxl.styles import PatternFill, Font
 from openpyxl.utils import get_column_letter
 from openpyxl.cell.cell import Cell
-import matplotlib.pyplot as plt
-import seaborn as sns
 import plotly.express as px
 import plotly.graph_objects as go
 
@@ -323,9 +321,7 @@ if all(uploaded_files):
                         cell.font = red_font
                 elif pd.notna(cl_val):
                     cell.fill = green_fill
-                    cell.font = green_font
-
-            # Safe formatting for Typical column
+                    cell.font = green_font         
             if typ_col is not None:
                 typ_val = row.get(f"Typical_{name}")
                 typ_cell = ws.cell(row=current_row, column=typ_col)
@@ -353,7 +349,7 @@ if all(uploaded_files):
     final_output.seek(0)
     final_output.name = "comparison_grouped.xlsx"
     st.download_button(
-        label="Download Excel (Grouped with Original Columns)",
+        label="Download Excel Comparison",
         data=final_output,
         file_name=final_output.name,
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
