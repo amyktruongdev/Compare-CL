@@ -109,13 +109,6 @@ if all(uploaded_files):
     df_combined["Pass or Fail"] = None
     df_combined["Why Failed"] = None
     result_columns += ["Pass or Fail", "Why Failed"]
-    st.header("Select Spec ID Expansion to Filter CLs", divider=True)
-    expansion_filter = st.radio(
-        "Choose which spec_id_expansion to include for CL comparison:",
-        options=["All", "Blank", "1", "2"],
-        index=0,
-        horizontal=True
-    )
     results_only_df = df_combined[result_columns]
     merged_output = pd.merge(
         base_df,
@@ -123,13 +116,6 @@ if all(uploaded_files):
         on=["spec_number", "spec_id_expansion", "spec_item_category", "spec_item_old_name"],
         how="left"
     )
-    if expansion_filter == "Blank":
-        merged_output = merged_output[merged_output["spec_id_expansion"] == ""]
-        df_combined = df_combined[df_combined["spec_id_expansion"] == ""]
-    elif expansion_filter in ["1", "2"]:
-        merged_output = merged_output[merged_output["spec_id_expansion"] == expansion_filter]
-        df_combined = df_combined[df_combined["spec_id_expansion"] == expansion_filter]
-
     columns_to_move = [col for col in [
         "File Presence", "Minimum_Limits1", "Typical_Limits1", "Maximum_Limits1"
     ] if col in merged_output.columns]
@@ -175,11 +161,6 @@ if all(uploaded_files):
         unique_spec_item_categorys = df_combined["spec_item_category"].drop_duplicates().tolist()
         selected_spec_item_category = st.selectbox("Select Spec Item Category", unique_spec_item_categorys)
         filtered_data = df_combined[df_combined["spec_item_category"] == selected_spec_item_category]
-
-    unique_spec_numbers = filtered_data["spec_number"].dropna().unique()
-    unique_spec_numbers.sort()
-    selected_spec_numbers = st.multiselect("Filter by Spec Number(s)", unique_spec_numbers, default=unique_spec_numbers)
-    filtered_data = filtered_data[filtered_data["spec_number"].isin(selected_spec_numbers)]
 
     # 💡 Only keep rows where spec_id_expansion is blank (worst case values)
     filtered_data = filtered_data[filtered_data["spec_id_expansion"] == ""]
